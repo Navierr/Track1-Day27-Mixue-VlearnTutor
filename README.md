@@ -298,7 +298,7 @@ Thư mục `Reflection/` lưu trữ báo cáo thu hoạch và nhật ký đóng 
 - 👤 [Phạm Tiến Hưng (2A202601800) — Team Lead / Product & AI Ops Lead](Reflection/PhamTienHung_2A202601800.md)
 - 👤 [Lê Đăng Tấn (2A202601916) — AI/LLM Engineer & Model Evaluation](Reflection/PhamTienHung_2A202601800.md)
 - 👤 [Nguyễn Quang Sơn (2A202601956) — Fullstack & LTI 1.3 Integration Engineer](Reflection/PhamTienHung_2A202601800.md)
-- 👤 [Nguyễn Minh Quang (2A202601730) — Customer Success & Data/FinOps Analyst](Reflection/PhamTienHung_2A202601800.md)
+- 👤 [Nguyễn Minh Quang (2A202601730) — Customer Success & Data/FinOps Analyst](Reflection/NguyenMinhQuang_2A202601730.md)
 
 ---
 

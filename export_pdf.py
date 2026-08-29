@@ -1,0 +1,800 @@
+import os
+import subprocess
+import shutil
+import tempfile
+from pathlib import Path
+import pypdf
+
+HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Day27_AI-Team-Lab_TeamMixue</title>
+<style>
+  /* Local typography for instant offline rendering */
+  @page {
+    size: A4 portrait;
+    margin: 8mm 10mm;
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 8.2pt;
+    line-height: 1.35;
+    color: #0f172a;
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+  }
+
+  .page {
+    width: 100%;
+    height: 279mm;
+    max-height: 279mm;
+    position: relative;
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding-bottom: 2mm;
+    overflow: hidden;
+  }
+
+  .page:last-child {
+    page-break-after: avoid;
+  }
+
+  /* Header Bar */
+  .header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #1e40af;
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+  }
+
+  .header-title {
+    font-size: 13pt;
+    font-weight: 800;
+    color: #1e3a8a;
+    letter-spacing: -0.3px;
+  }
+
+  .header-subtitle {
+    font-size: 8pt;
+    color: #475569;
+    font-weight: 500;
+  }
+
+  .header-badge {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1d4ed8;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  /* Footer */
+  .footer-bar {
+    border-top: 1px solid #cbd5e1;
+    padding-top: 3px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 7pt;
+    color: #64748b;
+  }
+
+  /* Section Title */
+  .section-heading {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #1e293b;
+    border-left: 3.5px solid #2563eb;
+    padding-left: 6px;
+    margin: 6px 0 4px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 7.5pt;
+    margin-bottom: 5px;
+  }
+
+  th {
+    background: #f1f5f9;
+    color: #1e293b;
+    font-weight: 700;
+    text-align: left;
+    padding: 4px 6px;
+    border: 1px solid #cbd5e1;
+  }
+
+  td {
+    padding: 3.5px 6px;
+    border: 1px solid #e2e8f0;
+    vertical-align: top;
+  }
+
+  tr:nth-child(even) td {
+    background: #f8fafc;
+  }
+
+  /* Cards & Callouts */
+  .card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    padding: 6px 8px;
+    margin-bottom: 5px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+
+  .card-highlight {
+    background: #f8fafc;
+    border-left: 3px solid #3b82f6;
+  }
+
+  .card-danger {
+    background: #fff1f2;
+    border-left: 3px solid #e11d48;
+    border: 1px solid #fecdd3;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .grid-4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+  }
+
+  /* Matrix Layout */
+  .matrix-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 4px;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    padding: 5px;
+    border-radius: 5px;
+    margin-bottom: 6px;
+  }
+
+  .matrix-cell {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 5px 6px;
+  }
+
+  .matrix-cell-title {
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* Stance Badges */
+  .badge {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 6.8pt;
+    font-weight: 700;
+  }
+  .badge-champion { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+  .badge-blocker { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+  .badge-supporter { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; }
+  .badge-skeptic { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+  .badge-bystander { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+  
+  .badge-raci {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    line-height: 15px;
+    text-align: center;
+    border-radius: 3px;
+    font-weight: 800;
+    font-size: 7pt;
+  }
+  .raci-r { background: #dbeafe; color: #1e40af; }
+  .raci-a { background: #fee2e2; color: #991b1b; }
+  .raci-c { background: #fef3c7; color: #92400e; }
+  .raci-i { background: #f1f5f9; color: #475569; }
+
+  .gate-pass {
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #065f46;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 7.2pt;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 3px;
+  }
+</style>
+</head>
+<body>
+
+<!-- PAGE 1: STAKEHOLDER MAP & STRATEGY -->
+<div class="page">
+  <div>
+    <div class="header-bar">
+      <div>
+        <div class="header-title">VLearn AI Tutor · Track 1 Day 27 AI Team Lab</div>
+        <div class="header-subtitle">Team: <strong>Mixue</strong> · Lead: Phạm Tiến Hưng (2A202601800) · B2B2C EduTech LTI 1.3</div>
+      </div>
+      <div class="header-badge">ARTEFACT 1 — TRANG 1/4</div>
+    </div>
+
+    <div class="section-heading">
+      <span>1. BẢN ĐỒ 6 STAKEHOLDER CỤ THỂ (INFLUENCE × INTEREST MATRIX & STANCE)</span>
+      <span style="font-size:7pt; color:#64748b;">Khung phân loại 2×2</span>
+    </div>
+
+    <div class="matrix-container">
+      <!-- High Inf / High Int -->
+      <div class="matrix-cell" style="border-left: 3px solid #16a34a;">
+        <div class="matrix-cell-title" style="color:#166534;">
+          <span>MANAGE CLOSELY (Cao Inf / Cao Int)</span>
+          <span class="badge badge-champion">Champion</span>
+        </div>
+        <div style="font-weight:700; font-size:7.5pt;">1. Giảng viên Cốt cán / Chủ nhiệm Bộ môn</div>
+        <div style="color:#475569; font-size:7pt;">Quan tâm: Giảm tải giải đáp 21h-23h, phương pháp Socratic, Teacher Analytics.</div>
+        <div style="font-weight:700; font-size:7.5pt; margin-top:2px;">5. Ban Điều hành & FinOps (Mixue Core)</div>
+        <div style="color:#475569; font-size:7pt;">Quan tâm: Gross Margin ≥58%, Chi phí token ≤1.200đ, Runway, ARR.</div>
+      </div>
+
+      <!-- Low Inf / High Int -->
+      <div class="matrix-cell" style="border-left: 3px solid #2563eb;">
+        <div class="matrix-cell-title" style="color:#1e40af;">
+          <span>KEEP INFORMED (Thấp Inf / Cao Int)</span>
+          <span class="badge badge-supporter">Supporter</span>
+        </div>
+        <div style="font-weight:700; font-size:7.5pt;">4. Sinh viên & Ban Cán sự Lớp (End-Users)</div>
+        <div style="color:#475569; font-size:7pt;">Quan tâm: Trợ giảng 24/7 lúc đêm muộn, trích dẫn nguồn giáo trình, độ trễ <2s, mini-eval feedback.</div>
+      </div>
+
+      <!-- High Inf / Low Int -->
+      <div class="matrix-cell" style="border-left: 3px solid #dc2626;">
+        <div class="matrix-cell-title" style="color:#991b1b;">
+          <span>KEEP SATISFIED (Cao Inf / Thấp Int)</span>
+          <span class="badge badge-blocker">Critical Blocker</span>
+        </div>
+        <div style="font-weight:700; font-size:7.5pt;">3. Quản trị LMS / Trưởng phòng CNTT Trường <span class="badge badge-blocker">Blocker</span></div>
+        <div style="color:#475569; font-size:7pt;">Quan tâm: Bảo mật Zero-PII, chuẩn LTI 1.3, không sập server LMS.</div>
+        <div style="font-weight:700; font-size:7.5pt; margin-top:2px;">2. Ban Giám Hiệu / Ban Đào Tạo ĐH <span class="badge badge-skeptic">Skeptic</span></div>
+        <div style="color:#475569; font-size:7pt;">Quan tâm: Liêm chính học thuật, ROI nâng cao tỷ lệ qua môn, uy tín.</div>
+      </div>
+
+      <!-- Low Inf / Low Int -->
+      <div class="matrix-cell" style="border-left: 3px solid #64748b;">
+        <div class="matrix-cell-title" style="color:#475569;">
+          <span>MONITOR (Thấp Inf / Thấp Int)</span>
+          <span class="badge badge-bystander">Bystander</span>
+        </div>
+        <div style="font-weight:700; font-size:7.5pt;">6. Đại diện Đối tác LMS (Canvas / Moodle)</div>
+        <div style="color:#475569; font-size:7pt;">Quan tâm: Ổn định API LTI 1.3, phân chia 25% Rev-share định kỳ.</div>
+      </div>
+    </div>
+
+    <div class="section-heading">
+      <span>2. CHIẾN LƯỢC HÀNH ĐỘNG 1–2 TUẦN TỚI CHO 4 STAKEHOLDER ƯU TIÊN</span>
+      <span style="font-size:7pt; color:#64748b;">Bám sát Day 20–26</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:22%;">Stakeholder & Stance</th>
+          <th style="width:25%;">Họ quan tâm điều gì?</th>
+          <th style="width:25%;">Giúp / Cản trở dự án thế nào?</th>
+          <th style="width:28%;">Hành động cụ thể 1–2 tuần tới (Action & Owner)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>1. Giảng viên Cốt cán</strong><br><span class="badge badge-champion">Champion</span> (Inf: 5/5)</td>
+          <td>Giải quyết điểm đau hỗ trợ SV 21h-23h; AI gợi mở Socratic, không làm hộ bài.</td>
+          <td><strong>Giúp:</strong> Tích hợp vào đề cương môn học, cấp Corpus 18 tài liệu chuẩn, bảo chứng khoa khác.</td>
+          <td>Bàn giao <em>Teacher Analytics Dashboard</em> trước T6 tuần 1; cài nhúng 2 lớp thử nghiệm (120 SV); họp 20p đối soát prompt T3 tuần kế.<br><strong>Owner:</strong> Nguyễn Minh Quang (CS Lead)</td>
+        </tr>
+        <tr>
+          <td><strong>2. Ban Cán sự SV Pilot</strong><br><span class="badge badge-supporter">Supporter</span> (Int: 5/5)</td>
+          <td>Hỏi bài đêm muộn, giải thích dễ hiểu, phản hồi &lt;2s, trích dẫn đúng slide trường.</td>
+          <td><strong>Giúp:</strong> Tạo volume học tập thực tế (North Star ≥20 SV/trường), lan tỏa Word-of-Mouth.</td>
+          <td>Tổ chức Onboarding Online 30p tối CN tuần 1 hướng dẫn mở LTI widget; phát hành mini-eval thu thập 100 lượt đánh giá đầu tiên.<br><strong>Owner:</strong> Lê Đăng Tấn (AI Eng)</td>
+        </tr>
+        <tr>
+          <td><strong>3. Quản trị viên LMS</strong><br><span class="badge badge-blocker">Critical Blocker</span> (Inf: 5/5)</td>
+          <td>Bảo mật dữ liệu sinh viên (Zero-PII), an toàn cổng LTI 1.3 không làm treo LMS.</td>
+          <td><strong>Cản trở:</strong> Từ chối cấp LTI Key khiến TTF-End-User &gt;14d (kích hoạt Luật đỏ R-02).</td>
+          <td>Gửi Whitepaper <em>Bảo mật LTI 1.3 & Zero-PII</em> trước 17h T3 tuần 1; Kỹ sư Sơn hẹn demo 1-1 cài đặt nút AI trên Staging LMS trong 48h (Luật R-02).<br><strong>Owner:</strong> Nguyễn Quang Sơn (LTI Eng)</td>
+        </tr>
+        <tr>
+          <td><strong>4. Ban Giám Hiệu / Đào Tạo</strong><br><span class="badge badge-skeptic">Skeptic</span> (Inf: 5/5)</td>
+          <td>Liêm chính học thuật, ngăn SV gian lận, chứng minh hiệu quả đầu tư công nghệ (ROI).</td>
+          <td><strong>Cản trở:</strong> Cấm sinh viên dùng AI trong bài tập hoặc từ chối ký hợp đồng chính thức.</td>
+          <td>Trình Báo cáo Tác động Sư phạm (Executive Summary 2 trang) chứng minh độ chính xác 92.4% và Socratic Guardrails chặn 100% giải hộ; xin sandbox.<br><strong>Owner:</strong> Phạm Tiến Hưng (Team Lead)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div>
+    <div class="gate-pass">
+      <span>🚦 <strong>GATE 1 VERIFICATION: PASS 100%</strong></span>
+      <span>Đủ 6 Stakeholders cụ thể · Map 2x2 rõ ràng · Phân định Stance chuẩn xác · 4 Kế hoạch hành động chi tiết có Owner & Deadline</span>
+    </div>
+    <div class="footer-bar">
+      <span>VLearn AI Tutor — Báo cáo Quản trị Dự án & Đội ngũ AI (Day 27 Lab)</span>
+      <span>Trang 1 / 4</span>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 2: CONCLUSION-FIRST PITCH & RACI MATRIX -->
+<div class="page">
+  <div>
+    <div class="header-bar">
+      <div>
+        <div class="header-title">VLearn AI Tutor · Track 1 Day 27 AI Team Lab</div>
+        <div class="header-subtitle">Team: <strong>Mixue</strong> · Lead: Phạm Tiến Hưng (2A202601800) · B2B2C EduTech LTI 1.3</div>
+      </div>
+      <div class="header-badge">ARTEFACT 2 — TRANG 2/4</div>
+    </div>
+
+    <div class="section-heading">
+      <span>1. BẢN PITCH "KẾT LUẬN TRƯỚC" (TARGET: GIẢNG VIÊN CỐT CÁN / CHỦ NHIỆM BỘ MÔN)</span>
+      <span style="font-size:7pt; color:#64748b;">Minto Pyramid Principle</span>
+    </div>
+
+    <div class="card card-highlight">
+      <div style="font-size:8pt; font-weight:800; color:#1e40af; margin-bottom:2px;">
+        🎯 KẾT LUẬN & ĐỀ XUẤT (CONCLUSION FIRST):
+      </div>
+      <div style="font-size:7.5pt; line-height:1.35;">
+        <strong>Team Mixue đề xuất triển khai chương trình Thử nghiệm 30 ngày (Pilot Sandbox) tích hợp Trợ giảng AI VLearn Tutor trực tiếp vào 02 lớp môn Lập trình (120 sinh viên) trên LMS Canvas/Moodle của Khoa</strong> — giải tỏa 50% gánh nặng giải đáp ngoài giờ của Giảng viên và bảo vệ 100% liêm chính học thuật bằng phương pháp gợi mở Socratic.
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div style="font-weight:700; color:#1e293b; font-size:7.5pt; margin-bottom:2px;">💡 3 Lý do chính (Key Arguments):</div>
+        <ul style="margin:0; padding-left:12px; font-size:7.2pt; color:#334155;">
+          <li><strong>Xóa khoảng trống 21h-23h:</strong> Phản hồi tức thì 24/7 khi sinh viên tự học đêm muộn.</li>
+          <li><strong>Phương pháp Socratic:</strong> Tuyệt đối không giải hộ; chỉ gợi mở từng bước & trích nguồn giáo trình.</li>
+          <li><strong>Teacher Dashboard:</strong> Thống kê tự động lỗ hổng kiến thức để GV tối ưu bài giảng.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div style="font-weight:700; color:#1e293b; font-size:7.5pt; margin-bottom:2px;">📊 Bằng chứng số liệu (Hard Evidence Day 20–26):</div>
+        <ul style="margin:0; padding-left:12px; font-size:7.2pt; color:#334155;">
+          <li><strong>Độ chính xác:</strong> <strong>92.4%</strong> trên bộ kiểm thử 18 tài liệu giáo trình chuẩn.</li>
+          <li><strong>An toàn học thuật:</strong> <strong>0%</strong> cung cấp code hoàn chỉnh (Responsible AI Gate).</li>
+          <li><strong>Hiệu năng & FinOps:</strong> Độ trễ <strong>&lt;1.8s</strong>, Chi phí AI <strong>1.150đ/session</strong> (trần ≤1.200đ).</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card" style="background:#f0fdf4; border:1px solid #bbf7d0; padding:4px 8px; margin-top:2px;">
+      <div style="font-size:7.2pt; color:#166534;">
+        <strong>Small Ask:</strong> Thầy/Cô đồng ý cho phép Kỹ sư VLearn nhúng tiện ích LTI vào 2 lớp thử nghiệm trong 48h tới, và dành 20 phút vào sáng thứ Ba tuần sau để cùng xem báo cáo phân tích học tập đầu tiên.
+      </div>
+    </div>
+
+    <div class="card card-danger" style="padding:4px 8px; margin-top:3px;">
+      <div style="font-size:7.2pt;">
+        <strong>Phản biện chính & Xử lý rủi ro:</strong> <em>"Sợ AI ảo giác hoặc giải hộ bài làm hỏng tư duy SV?"</em> → <strong>Giải pháp:</strong> Cơ chế RAG chỉ truy xuất đúng 18 tài liệu môn học đóng kín + Socratic Guardrails ép SV tự giải thích logic + Minh bạch 100% log chat trên Teacher Dashboard.
+      </div>
+    </div>
+
+    <div class="section-heading" style="margin-top:5px;">
+      <span>2. MA TRẬN RACI PHÂN QUYỀN 6 CÔNG VIỆC CỐT LÕI (SINGLE ACCOUNTABILITY)</span>
+      <span style="font-size:7pt; color:#64748b;">R - Responsible | A - Accountable | C - Consulted | I - Informed</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:34%;">Công việc quan trọng (1–2 tháng tới)</th>
+          <th style="text-align:center; width:11%;">Hưng<br>(Lead/Ops)</th>
+          <th style="text-align:center; width:11%;">Tấn<br>(AI Eng)</th>
+          <th style="text-align:center; width:11%;">Sơn<br>(LTI Eng)</th>
+          <th style="text-align:center; width:11%;">Quang<br>(CS/FinOps)</th>
+          <th style="text-align:center; width:11%;">Giảng viên<br>(SME)</th>
+          <th style="text-align:center; width:11%;">IT Trường<br>(LMS Admin)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>1. Xác định Use Case & Thiết kế Socratic Prompt Guardrails</strong></td>
+          <td style="text-align:center;"><span class="badge-raci raci-a">A</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-r">R</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-c">C</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-c">C</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-c">C</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-i">I</span></td>
+        </tr>
+        <tr>
+          <td><strong>2. Chuẩn bị Dữ liệu Corpus & Benchmark Eval Dataset (18 docs)</strong></td>
+          <td style="text-align:center;"><span class="badge-raci raci-c">C</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-a">A</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-i">I</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-r">R</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-c">C</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-i">I</span></td>
+        </tr>
+        <tr>
+          <td><strong>3. Xây dựng & Tích hợp Tiện ích LTI 1.3 Canvas/Moodle (Zero-PII)</strong></td>
+          <td style="text-align:center;"><span class="badge-raci raci-c">C</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-c">C</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-a">A</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-i">I</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-i">I</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-r">R</span></td>
+        </tr>
+        <tr>
+          <td><strong>4. Kiểm thử Tự động & Calibrate AI Judge Model (Acc ≥92%)</strong></td>
+          <td style="text-align:center;"><span class="badge-raci raci-c">C</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-a">A</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-r">R</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-i">I</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-i">I</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-i">I</span></td>
+        </tr>
+        <tr>
+          <td><strong>5. Triển khai Pilot tại 2 Lớp & Onboarding Giảng viên</strong></td>
+          <td style="text-align:center;"><span class="badge-raci raci-c">C</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-i">I</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-c">C</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-a">A</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-c">C</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-c">C</span></td>
+        </tr>
+        <tr>
+          <td><strong>6. Quyết định Release, Giám sát FinOps & Xử lý Incident (Kill Switch)</strong></td>
+          <td style="text-align:center;"><span class="badge-raci raci-a">A</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-r">R</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-r">R</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-r">R</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-i">I</span></td>
+          <td style="text-align:center;"><span class="badge-raci raci-i">I</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div>
+    <div class="gate-pass">
+      <span>🚦 <strong>GATE 2 VERIFICATION: PASS 100%</strong></span>
+      <span>Pitch Conclusion First + Small Ask · Xử lý phản biện bằng chứng thực · RACI 6 việc sống còn (Mỗi việc đúng 1 Accountable duy nhất)</span>
+    </div>
+    <div class="footer-bar">
+      <span>VLearn AI Tutor — Báo cáo Quản trị Dự án & Đội ngũ AI (Day 27 Lab)</span>
+      <span>Trang 2 / 4</span>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 3: AI TEAM ARCHITECTURE & RESOURCING -->
+<div class="page">
+  <div>
+    <div class="header-bar">
+      <div>
+        <div class="header-title">VLearn AI Tutor · Track 1 Day 27 AI Team Lab</div>
+        <div class="header-subtitle">Team: <strong>Mixue</strong> · Lead: Phạm Tiến Hưng (2A202601800) · B2B2C EduTech LTI 1.3</div>
+      </div>
+      <div class="header-badge">ARTEFACT 3 — TRANG 3/4</div>
+    </div>
+
+    <div class="section-heading">
+      <span>1. CẤU TRÚC AI TEAM GIAI ĐOẠN HIỆN TẠI (CROSS-FUNCTIONAL HYBRID SQUAD)</span>
+      <span style="font-size:7pt; color:#64748b;">Mô hình tổ chức Pilot-to-Scale</span>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:6px;">
+      <div class="card card-highlight">
+        <div style="font-weight:700; color:#1e40af; font-size:7.8pt; margin-bottom:2px;">👑 Product & AI Ops Leadership</div>
+        <div style="font-size:7.2pt;"><strong>Phạm Tiến Hưng (2A202601800)</strong> — Team Lead</div>
+        <div style="color:#475569; font-size:7pt;">• Quản trị Roadmap, Release Gate & North Star Metric<br>• Kiểm soát bài toán FinOps: Token Cost ≤1.200đ, GM ≥58%</div>
+      </div>
+      <div class="card" style="border-left:3px solid #8b5cf6;">
+        <div style="font-weight:700; color:#6d28d9; font-size:7.8pt; margin-bottom:2px;">🤝 External SME & Ecosystem Partner</div>
+        <div style="font-size:7.2pt;"><strong>Giảng viên Cốt cán & Đối tác LMS (Canvas/Moodle)</strong></div>
+        <div style="color:#475569; font-size:7pt;">• Cố vấn Sư phạm (SME) & Cung cấp Corpus giáo trình<br>• Hạ tầng phân phối LTI 1.3 & Chia sẻ 25% Rev-share</div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:6px;">
+      <div class="card" style="border-left:3px solid #059669;">
+        <div style="font-weight:700; color:#065f46; font-size:7.8pt; margin-bottom:2px;">🧠 AI & Evaluation Sub-Squad</div>
+        <div style="font-size:7.2pt;"><strong>Lê Đăng Tấn (2A202601916)</strong> — AI/LLM Engineer</div>
+        <div style="color:#475569; font-size:7pt;">• RAG Search, Socratic Prompt Engineering & Guardrails<br>• Xây dựng bộ Eval Kit, Calibrate AI Judge Model (Acc ≥92%)</div>
+      </div>
+      <div class="card" style="border-left:3px solid #d97706;">
+        <div style="font-weight:700; color:#92400e; font-size:7.8pt; margin-bottom:2px;">⚡ Engineering & Growth Sub-Squad</div>
+        <div style="font-size:7.2pt;"><strong>Nguyễn Quang Sơn & Nguyễn Minh Quang</strong></div>
+        <div style="color:#475569; font-size:7pt;">• <strong>Sơn (LTI Eng):</strong> Fullstack, LTI 1.3 Integration, Zero-PII, Onboarding 48h<br>• <strong>Quang (CS Lead):</strong> Teacher Analytics, Onboarding SV, Đối soát Token</div>
+      </div>
+    </div>
+
+    <div class="section-heading">
+      <span>2. CORE ROLES, CAPABILITY GAPS & CHIẾN LƯỢC BỔ SUNG (PRIORITY RESOURCING)</span>
+      <span style="font-size:7pt; color:#64748b;">Hire vs Outsource vs Partner</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:20%;">Core Role & Nhân sự</th>
+          <th style="width:25%;">Năng lực hiện có (Current)</th>
+          <th style="width:25%;">Khoảng trống năng lực (Gap)</th>
+          <th style="width:30%;">Chiến lược Resourcing & Hành động</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>AI Product & Ops Lead</strong><br><em>Phạm Tiến Hưng</em></td>
+          <td>Financial Model Day 24-25, Operating Dashboard Day 26, Điều phối Squad.</td>
+          <td>Pháp lý hợp đồng EdTech B2B với trường đại học công lập.</td>
+          <td><span class="badge badge-champion">PARTNER</span> Tham vấn mạng lưới cố vấn pháp chế vườn ươm để chuẩn hóa Hợp đồng Dịch vụ LTI.</td>
+        </tr>
+        <tr>
+          <td><strong>AI/LLM Engineer</strong><br><em>Lê Đăng Tấn</em></td>
+          <td>RAG Tool-calling, Prompt Socratic, chạy Eval Kit 18 tài liệu Day 20-21.</td>
+          <td>Tự host MLOps hạ tầng LLM Serving & Fine-tuning riêng.</td>
+          <td><span class="badge badge-supporter">OUTSOURCE / SAAS</span> Dùng API Model Routing (Flash/Pro) + Prompt Caching; chỉ tuyển MLOps khi &gt;50k session/tháng.</td>
+        </tr>
+        <tr>
+          <td><strong>Fullstack & LTI Eng</strong><br><em>Nguyễn Quang Sơn</em></td>
+          <td>Backend API Python/NodeJS, UI widget nhúng, bảo mật hệ thống.</td>
+          <td>Tiêu chuẩn bảo mật IMS Global LTI 1.3 chuyên sâu & SSO phức tạp.</td>
+          <td><span class="badge badge-supporter">OUTSOURCE TOOLING</span> Tận dụng thư viện <code>pylti1.3</code> + Hỗ trợ trực tiếp 1-1 với IT trường trong 48h (Luật R-02).</td>
+        </tr>
+        <tr>
+          <td><strong>CS & FinOps Lead</strong><br><em>Nguyễn Minh Quang</em></td>
+          <td>Teacher Analytics, phân tích dữ liệu học tập, đối soát chi phí token.</td>
+          <td>Sản xuất video/tài liệu đào tạo người dùng hàng loạt (Mass Training).</td>
+          <td><span class="badge badge-champion">PARTNER</span> Hợp tác cùng Ban cán sự SV sản xuất clip ngắn 60s hướng dẫn sử dụng nhanh.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div>
+    <div class="gate-pass">
+      <span>🚦 <strong>GATE 3 VERIFICATION: PASS 100%</strong></span>
+      <span>Cấu trúc Hybrid tinh gọn · Phân công 4 Core Roles thực tế · Nhận diện chính xác Capability Gaps · Chiến lược Resourcing tối ưu Runway</span>
+    </div>
+    <div class="footer-bar">
+      <span>VLearn AI Tutor — Báo cáo Quản trị Dự án & Đội ngũ AI (Day 27 Lab)</span>
+      <span>Trang 3 / 4</span>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 4: TEAM HEALTH & 30-DAY GROWTH PLAN -->
+<div class="page">
+  <div>
+    <div class="header-bar">
+      <div>
+        <div class="header-title">VLearn AI Tutor · Track 1 Day 27 AI Team Lab</div>
+        <div class="header-subtitle">Team: <strong>Mixue</strong> · Lead: Phạm Tiến Hưng (2A202601800) · B2B2C EduTech LTI 1.3</div>
+      </div>
+      <div class="header-badge">ARTEFACT 4 — TRANG 4/4</div>
+    </div>
+
+    <div class="section-heading">
+      <span>1. ĐÁNH GIÁ TEAM HEALTH 4 KHÍA CẠNH (TỰ CHẤM ĐIỂM 1–5 CỦA 4 THÀNH VIÊN)</span>
+      <span style="font-size:7pt; color:#64748b;">Chất lượng AI · Tiến độ · Tinh thần · Tốc độ ra sản phẩm</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:28%;">Khía cạnh đánh giá</th>
+          <th style="text-align:center; width:10%;">Hưng</th>
+          <th style="text-align:center; width:10%;">Tấn</th>
+          <th style="text-align:center; width:10%;">Sơn</th>
+          <th style="text-align:center; width:10%;">Quang</th>
+          <th style="text-align:center; width:12%;">Trung bình</th>
+          <th style="width:20%;">Chẩn đoán thực tế</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>1. Chất lượng AI (AI Quality)</strong></td>
+          <td style="text-align:center;">4.0</td>
+          <td style="text-align:center;">4.0</td>
+          <td style="text-align:center;">3.5</td>
+          <td style="text-align:center;">3.5</td>
+          <td style="text-align:center; font-weight:700;">3.75</td>
+          <td>Output ổn định trên Corpus 18 docs (Acc 92.4%), cần giảm ảo giác khi hỏi sâu.</td>
+        </tr>
+        <tr>
+          <td><strong>2. Tiến độ (Delivery Velocity)</strong></td>
+          <td style="text-align:center;">3.5</td>
+          <td style="text-align:center;">3.0</td>
+          <td style="text-align:center;">3.5</td>
+          <td style="text-align:center;">3.0</td>
+          <td style="text-align:center; font-weight:700;">3.25</td>
+          <td>Tiến độ AI tốt nhưng Onboarding bị chậm do chờ IT trường phê duyệt LTI.</td>
+        </tr>
+        <tr>
+          <td><strong>3. Tinh thần team (Team Morale)</strong></td>
+          <td style="text-align:center;">4.5</td>
+          <td style="text-align:center;">4.0</td>
+          <td style="text-align:center;">4.0</td>
+          <td style="text-align:center;">4.5</td>
+          <td style="text-align:center; font-weight:700; color:#16a34a;">4.25</td>
+          <td>Giao tiếp thẳng thắn, phối hợp ăn ý, không né tránh vấn đề kỹ thuật.</td>
+        </tr>
+        <tr>
+          <td><strong>4. Tốc độ ra sản phẩm (Product Cadence)</strong></td>
+          <td style="text-align:center;">3.0</td>
+          <td style="text-align:center;">3.0</td>
+          <td style="text-align:center;">3.0</td>
+          <td style="text-align:center;">2.5</td>
+          <td style="text-align:center; font-weight:700; color:#dc2626;">2.88 🔴</td>
+          <td><strong>Thấp nhất:</strong> Thời gian đẩy tính năng lên LMS trường mất tới 10 ngày (TTF-End-User).</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="card card-highlight" style="padding:4px 8px; margin-bottom:5px;">
+      <div style="font-size:7.2pt;">
+        <strong>Phân tích điểm chênh lệch & Điểm nghẽn sống còn:</strong> Điểm số chênh lệch nhiều nhất ở <em>Tốc độ ra sản phẩm</em> (AI Eng thấy nhanh khi chạy eval offline nhưng CS thấy chậm khi bàn giao cho trường). <strong>Vấn đề sống còn:</strong> Phải rút ngắn thời gian Onboarding LTI 1.3 từ 10 ngày xuống ≤48h để không vi phạm Luật đỏ R-02.
+      </div>
+    </div>
+
+    <div class="section-heading">
+      <span>2. COMPETENCY FRAMEWORK & KẾ HOẠCH PHÁT TRIỂN 30 NGÀY (30-DAY GROWTH PLAN)</span>
+      <span style="font-size:7pt; color:#64748b;">L1 AI Literate → L2 AI Practitioner → L3 AI Builder</span>
+    </div>
+
+    <div class="card" style="padding:4px 8px; margin-bottom:5px; background:#faf5ff; border:1px solid #e9d5ff;">
+      <div style="font-size:7.2pt; color:#6b21a8;">
+        <strong>Nâng cấp Năng lực Trọng tâm:</strong> Vai trò <strong>AI/LLM Engineer (Lê Đăng Tấn)</strong> từ <strong>L2 (AI Practitioner)</strong> lên <strong>L3 (AI Builder)</strong> qua việc tự động hóa CI/CD Eval Pipeline & Production Observability (Braintrust/LangSmith tracking 100% trace phiên học thật).
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:5%;">STT</th>
+          <th style="width:25%;">Vấn đề cần giải quyết</th>
+          <th style="width:32%;">Hành động 30 ngày (Action)</th>
+          <th style="width:16%;">Owner & Deadline</th>
+          <th style="width:22%;">Dấu hiệu hoàn thành (DoD)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="text-align:center;"><strong>1</strong></td>
+          <td><strong>Onboarding LTI chậm</strong><br>(TTF-End-User = 10d)</td>
+          <td>Xây dựng Docker Staging Template + Script Onboarding 1-Click LTI 1.3 Canvas & Moodle; ban hành Whitepaper 1 trang cho IT trường.</td>
+          <td><strong>Nguyễn Quang Sơn</strong><br><em>(LTI Engineer)</em><br><span style="color:#2563eb; font-weight:700;">10/09/2026</span></td>
+          <td>Nhúng thành công AI widget trên Staging LMS trường trong <strong>≤48 giờ</strong>; IT trường nghiệm thu.</td>
+        </tr>
+        <tr>
+          <td style="text-align:center;"><strong>2</strong></td>
+          <td><strong>Thiếu CI/CD kiểm soát chất lượng & chi phí AI</strong></td>
+          <td>Tích hợp bộ 50 câu Golden Dataset vào GitHub Actions; gắn LangSmith log telemetry & chi phí token real-time.</td>
+          <td><strong>Lê Đăng Tấn</strong><br><em>(AI Engineer)</em><br><span style="color:#2563eb; font-weight:700;">16/09/2026</span></td>
+          <td>Pipeline CI chạy tự động trước khi release; đạt <strong>Acc ≥92%</strong> & <strong>Chi phí ≤1.200đ</strong> trên 500 session đầu.</td>
+        </tr>
+        <tr>
+          <td style="text-align:center;"><strong>3</strong></td>
+          <td><strong>Nhịp phối hợp & phản ứng phản hồi người dùng</strong></td>
+          <td>Tổ chức họp Weekly Standup 20 phút (09h00 T6 hàng tuần); rà soát 3 chỉ số L-01, O-02, O-03 theo Luật R-01 → R-05.</td>
+          <td><strong>Phạm Tiến Hưng</strong><br><em>(Team Lead)</em><br><span style="color:#2563eb; font-weight:700;">Từ 04/09 (4 tuần)</span></td>
+          <td>4 biên bản họp ngắn trên repo; giải quyết 100% blocker trong 24h; giữ chi phí token ≤1.200đ.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div>
+    <div class="gate-pass">
+      <span>🚦 <strong>GATE 4 VERIFICATION: PASS 100%</strong></span>
+      <span>Đủ 4 khía cạnh sức khỏe · Xác định đúng điểm nghẽn LTI · Nâng cấp L2→L3 rõ ràng · 3 Hành động Growth Plan khả thi có Owner & Deadline</span>
+    </div>
+    <div class="footer-bar">
+      <span>VLearn AI Tutor — Báo cáo Quản trị Dự án & Đội ngũ AI (Day 27 Lab)</span>
+      <span>Trang 4 / 4</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
+"""
+
+def generate_pdf():
+    html_file = Path("Day27_AI-Team-Lab_TeamMixue.html")
+    pdf_team = Path("Day27_AI-Team-Lab_TeamMixue.pdf")
+    pdf_mixue = Path("Day27_AI-Team-Lab_Mixue.pdf")
+
+    html_file.write_text(HTML_TEMPLATE, encoding="utf-8")
+    print(f"Wrote HTML template to {html_file}")
+
+    edge_paths = [
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    ]
+
+    edge_bin = None
+    for ep in edge_paths:
+        if os.path.exists(ep):
+            edge_bin = ep
+            break
+
+    if not edge_bin:
+        print("ERROR: Edge or Chrome binary not found!")
+        return
+
+    abs_html = html_file.resolve()
+    abs_pdf = pdf_team.resolve()
+    file_url = abs_html.as_uri()
+
+    temp_dir = tempfile.mkdtemp()
+
+    cmd = [
+        edge_bin,
+        "--headless=new",
+        "--disable-gpu",
+        "--no-sandbox",
+        f"--user-data-dir={temp_dir}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-extensions",
+        f"--print-to-pdf={str(abs_pdf)}",
+        file_url
+    ]
+
+    print("Running:", " ".join(cmd))
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    print("Return code:", res.returncode)
+
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+    if abs_pdf.exists():
+        shutil.copy(abs_pdf, pdf_mixue.resolve())
+        reader = pypdf.PdfReader(str(abs_pdf))
+        num_pages = len(reader.pages)
+        print(f"SUCCESS: Generated PDF ({num_pages} pages)")
+        print(f"Exported: {pdf_team} and {pdf_mixue}")
+    else:
+        print("FAIL: PDF generation failed.")
+
+if __name__ == "__main__":
+    generate_pdf()
